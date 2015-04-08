@@ -1,0 +1,40 @@
+﻿;;;;;;;;所用到的TC1000(s)
+;;;;;;;中断名及参数地址
+    TextBuffer    =$02c0
+    FontType1     =$0392
+    FontType2     =$0393
+    FontType3     =$03AF
+    FontType4     =$03B0
+
+    AutoPowerOffA =$03f6
+
+    Graph_x1      =$03c3
+    Graph_y1      =$03c4
+    Graph_x2      =$03c5
+    Graph_y2      =$03c6
+    GraphType     =$03c9
+    GraphAddr     =$92
+    FileName      =$0822
+
+
+    NandLenth     =$0967
+    NandReadDest  =$f0
+    NandNum       =$081d
+    NandOffset    =$081f
+
+    FileBlock1st  =$087b
+
+
+
+    m_ClearText   =$c72a
+    m_ClearScreen =$c737
+    m_UpdateLCD   =$c719
+    m_Inkey       =$c006
+
+    m_ReadNand    =$0505
+    m_TestDir     =$050a
+    m_EnterDir    =$050d
+    m_BoxA        =$CA0A
+    m_BoxB        =$CA0C
+    m_FileGraphA  =$ca09
+

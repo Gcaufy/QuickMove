@@ -1,0 +1,975 @@
+﻿;我用的是以前自己写的filelist
+;用到的中断较少，但也不太好读
+    NAND=$3000  ;将目录所在的NAND块读入地址NAND
+    FILE_NUM=$400A  ;目录内文件数加1
+    FIRST_NA=$400B  ;屏幕上第一个文件的序号,从0开始
+    DIR_NUM=$0B05  ;目录层数，".."为0层
+    KEY=$400D  ;判断是否按了输入或跳出
+    CURSOR=$03B4  ;光标所在位置的序号，从0开始
+filelist:
+;清除存放源文件名的地方
+    LDA #$FF
+    LDX #$0F
+csh:
+    STA $185F,X
+    DEX
+    BNE csh
+    LDA #$00
+    STA FIRST_NA
+    STA CURSOR
+    STA DIR_NUM
+    LDY #$04
+wd1:
+    LDA root-1,Y
+    STA FileName-1,Y
+    STA $17FF,Y
+    DEY
+    BNE wd1
+    LDY #$10
+    INT m_EnterDir
+list:
+    JSR getblock
+    JSR print
+    JMP checkkey
+root:
+  .DB "/.."
+  .DB $00
+;读取目录NAND块到地址NAND
+getblock:
+    LDA FileBlock1st
+    STA NandNum
+    LDA FileBlock1st+1
+    STA NandNum+1
+    LDA #$00
+    STA NandOffset
+    STA NandOffset+1
+    STA NandLenth
+    LDA #$10
+    STA NandLenth+1
+    LDA #<NAND
+    STA NandReadDest
+    LDA #>NAND
+    STA NandReadDest+1
+    INT m_ReadNand
+    LDA #$2E  ;.
+    STA NAND+2
+    STA NAND+3
+;计算文件数
+filenum:
+    LDX #$00
+    LDA #<NAND
+    STA $80
+    LDA #>NAND
+    STA $81
+num2:
+    LDY #$00
+    LDA ($80),Y
+    INY
+    AND ($80),Y
+    CMP #$FF
+    BEQ num1
+    INX
+    CLC
+    LDA #$10
+    ADC $80
+    STA $80
+    LDA #$00
+    ADC $81
+    STA $81
+    JMP num2
+num1:
+    STX FILE_NUM
+    RTS
+;显示到屏幕上
+print:
+    INT m_ClearText
+    INT m_ClearScreen
+    LDA #<NAND+2
+    STA $80
+    LDA #>NAND+2
+    STA $81
+    LDA #<TextBuffer
+    STA $40
+    LDA #>TextBuffer
+    STA $41
+    LDA FIRST_NA
+    BEQ first2
+first1:
+;相当于把X乘10
+;比用乘法中断效率高
+    LDX #$00
+    STX $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    CLC
+    ADC #<NAND+2
+    STA $80
+    LDA $81
+    ADC #>NAND+2
+    STA $81
+first2:
+    LDY #$00
+    LDA FILE_NUM
+    SEC
+    SBC FIRST_NA
+    CMP #$06
+    BCC print3
+    LDA #$06
+print3:
+    TAX
+print2:
+    LDA ($80),Y
+    BEQ print1
+    STA ($40),Y
+    INY
+    CPY #$0E
+    BNE print2
+print1:
+    CLC
+    LDA $80
+    ADC #$10
+    STA $80
+    LDA $81
+    ADC #$00
+    STA $81
+    CLC
+    LDA $40
+    ADC #$1A  ;大字为#$14
+    STA $40
+    LDA $41
+    ADC #$00
+    STA $41
+    LDY #$00
+    DEX
+    BNE print2
+    LDA #$01   ;想改为大字此处要改
+    STA FontType1
+    LDA #$00
+    STA FontType2
+    LDA #$FF
+    STA FontType3
+    STA FontType4
+    INT m_UpdateLCD
+;画反显矩形
+drawbox:
+    LDA #$00
+    CLC
+    LDX CURSOR
+    BEQ draw1
+draw2:
+    ADC #$0D  ;想改为大字此处要改
+    DEX
+    BNE draw2
+draw1:
+    ADC #$01
+    STA Graph_y1
+    ADC #$0D
+    STA Graph_y2
+    LDA #$00
+    STA Graph_x1
+    LDA #$54
+    STA Graph_x2
+    LDA #$02
+    STA GraphType
+    INT m_BoxA
+    RTS
+;检测按键
+checkkey:
+    LDA #$00
+    STA KEY
+    INT m_Inkey
+    LDY #$00
+check:
+    CMP mainkey,Y
+    BEQ check1
+    INY
+    CPY #$0E   ;功能键个数
+    BNE check
+    JMP checkkey
+check1:
+    TYA
+    ASL
+    TAY
+    LDA jmpkey,Y
+    STA check2
+    INY
+    LDA jmpkey,Y
+    STA check2+1
+;JSR
+  .DB $20
+check2:
+  .DB $00,$00
+    LDA KEY
+    CMP #$00
+    BEQ ck
+    CMP #$02  ;进入了深一层目录
+    BEQ isdir
+    CMP #$03  ;按了跳出键
+    BEQ isexit
+    CMP #$04
+    BEQ out ;跳出
+ck:
+    JMP checkkey
+out:
+    SEC
+    RTS
+isdir:
+    LDA #$00
+    STA CURSOR
+    STA FIRST_NA
+isexit:
+    JMP list
+mainkey:
+  .DB $14,$15,$16,$17,$19,$1B,$0D,$13,$0E,$65,$68,"x","v","s"
+jmpkey:
+  .DW Up,Down,right,left,Help,Exit,Enter,pageup,pagedown,ekey,hkey,xkey,vkey,skey
+;将修改好了的文件列表写入nand块
+save1:
+    LDA #<inram
+    STA $42
+    LDA #>inram
+    STA $43
+    LDA #<inramend
+    STA $44
+    LDA #>inramend
+    STA $45
+    LDA #<RAMADDR
+    STA $40
+    LDA #>RAMADDR
+    STA $41
+    JSR SEND
+    JSR RAMADDR
+
+    RTS
+;按s
+skey:
+    JSR opendir
+    LDA FileBlock1st
+    STA $50
+    LDA FileBlock1st+1
+    STA $51
+    LDA #$FF
+    LDX #$0F
+skey2:
+    STA $185F,X
+    DEX
+    BNE skey2
+    LDA #$00
+    STA NAND+4
+    JSR save1
+    LDA #<bccg
+    STA $80
+    LDA #>bccg
+    STA $81
+    JSR mes
+    JSR print
+    RTS
+bccg:
+   .DB "保存成功"
+;查找是否存在同名文件，若存在C=0
+issame:
+    LDA #<NAND+2
+    STA $82
+    LDA #>NAND+2
+    STA $83
+    INC $80
+    INC $80
+issame1:
+    CLC
+    LDA $82
+    ADC #$10
+    STA $82
+    TAX
+    LDA $83
+    ADC #$00
+    STA $83
+    DEX
+    DEX
+    TXA
+    CMP $40
+    BNE issame3
+    LDA $83
+    CMP $41
+    BNE issame3
+    DEC $80
+    DEC $80
+    SEC
+    RTS
+issame3:
+    LDY #$00
+issame2:
+    LDA ($82),Y
+    CMP ($80),Y
+    BNE issame1
+    INY
+    CPY #$0E
+    BNE issame2
+    DEC $80
+    DEC $80
+    CLC
+    RTS
+;将所选文件名存到$1860
+;所在文件夹的块存入$E0，$E1
+;文件名所在地址存入$E2，$E3
+getaddr:
+    LDA FileBlock1st
+    STA $E0
+    LDA FileBlock1st+1
+    STA $E1
+    LDA #$00
+    STA $81
+    CLC
+    LDA CURSOR
+    ADC FIRST_NA
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    CLC
+    ADC #<NAND
+    STA $40
+    STA $E2
+    LDA $81
+    ADC #>NAND
+    STA $41
+    STA $E3
+    LDA #$60
+    STA $80
+    LDA #$18
+    STA $81
+    LDY #$00
+ga1:
+    LDA ($40),Y
+    STA ($80),Y
+    INY
+    CPY #$10
+    BNE ga1
+    RTS
+;按v
+vkey:
+    LDA $1860
+    AND $1861
+    CMP #$FF
+    BNE vkey4
+    RTS
+;判断工作目录是不是/sysdir
+vkey4:
+    LDA DIR_NUM
+    CMP #$01
+    BNE vkey2
+    LDA $1810
+    CMP #$73   ;s
+    BNE vkey2
+    LDA $1811
+    CMP #$79   ;y
+    BNE vkey2
+    LDA $1812
+    CMP #$73    ;s
+    BNE vkey2
+    LDA $1813
+    CMP #$64    ;d
+    BNE vkey2
+    LDA $1814
+    CMP #$69    ;i
+    BNE vkey2
+    LDA $1815
+    CMP #$72    ;r
+    BNE vkey2
+    LDA $1816
+    BNE vkey2
+    RTS
+vkey2:
+    LDA #$00
+    STA $81
+    CLC
+    LDA FILE_NUM
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    CLC
+    ADC #<NAND
+    STA $40
+    LDA $81
+    ADC #>NAND
+    STA $41
+    LDA #$60
+    STA $80
+    LDA #$18
+    STA $81
+    JSR issame
+    BCS vkey5
+    JMP vkeytm
+vkey5:
+    LDA $E0
+    STA FileBlock1st
+    STA $50
+    LDA $E1
+    STA $51
+    STA FileBlock1st+1
+    JSR getblock
+    LDA $E2
+    STA $40
+    LDA $E3
+    STA $41
+    CLC
+    LDA $40
+    ADC #$10
+    STA $42
+    LDA $41
+    ADC #$00
+    STA $43
+    LDA #$00
+    STA $81
+    CLC
+    LDA FILE_NUM
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    CLC
+    ADC #<NAND
+    ADC #$10
+    STA $44
+    LDA $81
+    ADC #>NAND
+    STA $45
+    JSR SEND
+    DEC FILE_NUM
+    JSR save1
+    JSR opendir
+    JSR getblock
+    LDA FileBlock1st
+    STA $50
+    LDA FileBlock1st+1
+    STA $51
+    LDA #$00
+    STA $81
+    CLC
+    LDA FILE_NUM
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    CLC
+    ADC #<NAND
+    STA $40
+    LDA $81
+    ADC #>NAND
+    STA $41
+    LDA #$60
+    STA $80
+    LDA #$18
+    STA $81
+    LDY #$00
+vkey1:
+    LDA ($80),Y
+    STA ($40),Y
+    INY
+    CPY #$10
+    BNE vkey1
+    INC FILE_NUM
+    JSR save1
+    LDA #$FF
+    LDX #$0F
+vkey3:
+    STA $185F,X
+    DEX
+    BNE vkey3
+
+    LDA #<sycg
+    STA $80
+    LDA #>sycg
+    STA $81
+    JSR mes
+    JSR print
+vkeyend:
+    RTS
+;有同名文件
+vkeytm:
+    LDA #<tmtxt
+    STA $80
+    LDA #>tmtxt
+    STA $81
+    JSR mes
+    JSR print
+    RTS
+sycg:
+    .DB "瞬移成功"
+tmtxt:
+    .DB "同名文件"
+;按x
+xkey:
+    LDA $1860
+    AND $1861
+    CMP #$FF
+    BNE xkeyend
+    LDA CURSOR
+    ORA FIRST_NA
+    BEQ xkeyend
+    LDA DIR_NUM
+    BNE xkey2
+    CLC
+    LDA CURSOR
+    ADC FIRST_NA
+    CMP #$01
+    BEQ xkeyend
+;判断工作目录是不是/sysdir
+xkey2:
+    LDA DIR_NUM
+    CMP #$01
+    BNE xkey1
+    LDA $1810
+    CMP #$73
+    BNE xkey1
+    LDA $1811
+    CMP #$79
+    BNE xkey1
+    LDA $1812
+    CMP #$73
+    BNE xkey1
+    LDA $1813
+    CMP #$64
+    BNE xkey1
+    LDA $1814
+    CMP #$69
+    BNE xkey1
+    LDA $1815
+    CMP #$72
+    BNE xkey1
+    LDA $1816
+    BEQ xkeyend
+xkey1:
+    JSR opendir
+    JSR getaddr
+    LDA #<syjxtxt
+    STA $80
+    LDA #>syjxtxt
+    STA $81
+    JSR mes
+    JSR print
+xkeyend:
+    RTS
+syjxtxt:
+    .DB "瞬移就绪"
+;按左
+left:
+    CLC
+    LDA CURSOR
+    ADC FIRST_NA
+    CMP #$02
+    BCC leftend
+    LDA DIR_NUM
+    BNE left2
+    CLC
+    LDA CURSOR
+    ADC FIRST_NA
+    CMP #$02
+    BEQ leftend
+left2:
+    JSR getaddr
+    LDA $40
+    SEC
+    SBC #$10
+    STA $42
+    LDA $41
+    STA $43
+    LDA $42
+    CMP #$F0
+    BNE left3
+    DEC $43
+left3:
+    LDY #$00
+left1:
+    LDA ($42),Y
+    STA ($40),Y
+    LDA ($80),Y
+    STA ($42),Y
+    INY
+    CPY #$10
+    BNE left1
+    JSR Up
+    JSR print
+leftend:
+    RTS
+;按右
+right:
+    LDA CURSOR
+    ORA FIRST_NA
+    BEQ rightend
+    CLC
+    LDA CURSOR
+    ADC FIRST_NA
+    ADC #$01
+    CMP FILE_NUM
+    BCS rightend
+    LDA DIR_NUM
+    BNE right3
+    CLC
+    LDA CURSOR
+    ADC FIRST_NA
+    CMP #$01
+    BEQ rightend
+right3:
+    JSR getaddr
+    CLC
+    LDA $40
+    ADC #$10
+    STA $42
+    LDA $41
+    STA $43
+    LDA $42
+    BNE right2
+    INC $43
+right2:
+    LDY #$00
+right1:
+    LDA ($42),Y
+    STA ($40),Y
+    LDA ($80),Y
+    STA ($42),Y
+    INY
+    CPY #$10
+    BNE right1
+    JSR Down
+    JMP print
+rightend:
+    RTS
+;按E
+ekey:
+    LDX FILE_NUM
+    CPX #$07
+    BCS ekey2
+    DEX
+    STX CURSOR
+    LDA #$00
+    STA FIRST_NA
+    JSR print
+    RTS
+ekey2:
+    LDA #$05
+    STA CURSOR
+    LDA FILE_NUM
+    SEC
+    SBC #$06
+    STA FIRST_NA
+    JSR print
+    RTS
+;按H
+hkey:
+    LDA #$00
+    STA CURSOR
+    STA FIRST_NA
+    JSR print
+    RTS
+;上
+Up:
+    LDA CURSOR
+    BEQ up1
+    JSR drawbox
+    DEC CURSOR
+    JSR drawbox
+    RTS
+up1:
+    LDA FIRST_NA
+    BEQ upend
+    DEC FIRST_NA
+    JSR print
+upend:
+    RTS
+;下
+Down:
+    LDA CURSOR
+    CMP #$05
+    BEQ down1
+    CLC
+    ADC FIRST_NA
+    ADC #$01
+    CMP FILE_NUM
+    BEQ downend
+    JSR drawbox
+    INC CURSOR
+    JSR drawbox
+    RTS
+down1:
+    LDA FIRST_NA
+    CLC
+    ADC #$06
+    CMP FILE_NUM
+    BEQ downend
+    INC FIRST_NA
+    JSR print
+downend:
+    RTS
+;求助
+Help:
+    INT m_ClearScreen
+    INT m_ClearText
+    LDX #$9C
+help1:
+    LDA helpword-1,X
+    STA TextBuffer-1,X
+    DEX
+    BNE help1
+    INT m_UpdateLCD
+    INT m_Inkey
+    JSR print
+    RTS
+;跳出
+Exit:
+    LDA #$03
+    STA KEY
+    LDA DIR_NUM
+    BNE notout
+    LDA #$04
+    STA KEY
+    RTS
+notout:
+    ASL
+    ASL
+    ASL
+    ASL
+    STA $80
+    LDA #$18
+    STA $81
+    LDY #$0F
+    LDA ($80),Y
+    STA CURSOR
+    DEY
+    LDA ($80),Y
+    STA FIRST_NA
+    DEC DIR_NUM
+    JSR opendir
+    RTS
+;输入
+Enter:
+    LDA #$02
+    STA KEY
+    LDA CURSOR
+    ORA FIRST_NA
+    BNE not
+    JSR Exit
+    RTS
+not:
+    LDA #$00
+    STA $81
+    CLC
+    LDA CURSOR
+    ADC FIRST_NA
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    ASL
+    ROL $81
+    CLC
+    ADC #<NAND+2
+    STA $40
+    LDA $81
+    ADC #>NAND+2
+    STA $41
+    LDX DIR_NUM
+    INX
+    TXA
+    ASL
+    ASL
+    ASL
+    ASL
+    STA $80
+    LDA #$18
+    STA $81
+    LDY #$00
+enter1:
+    LDA ($40),Y
+    STA ($80),Y
+    BEQ enter3
+    INY
+    CPY #$0E
+    BNE enter1
+    LDA #$00
+    STA ($80),Y
+enter3:
+    INC DIR_NUM
+    JSR opendir
+    BCC enterend
+    LDA #$01
+    STA KEY
+    RTS
+enterend:
+    LDY #$0F
+    LDA CURSOR
+    STA ($80),Y
+    DEY
+    LDA FIRST_NA
+    STA ($80),Y
+    RTS
+;上翻页
+pageup:
+    LDA FIRST_NA
+    CMP #$00
+    BEQ pageupend
+    CMP #$06
+    BCS pageup1
+    LDA #$00
+    STA FIRST_NA
+    JSR print
+    RTS
+pageup1:
+    SEC
+    SBC #$06
+    STA FIRST_NA
+    JSR print
+pageupend:
+    RTS
+;下翻页
+pagedown:
+    LDA FIRST_NA
+    CLC
+    ADC #$06
+    CMP FILE_NUM
+    BCS pagedownend
+    STA FIRST_NA
+    LDA CURSOR
+    CLC
+    ADC FIRST_NA
+    CMP FILE_NUM
+    BCC pagedown1
+    LDA FILE_NUM
+    SEC
+    SBC FIRST_NA
+    SBC #$01
+    STA CURSOR
+pagedown1:
+    JSR print
+pagedownend:
+    RTS
+;自己写的一个类似INT$CA12一样的信息框
+;文字只能长8字节
+;画信息框,文字地址放在$80
+mes:
+    INT m_ClearScreen
+    LDY #$00
+mes1:
+    LDA ($80),Y
+    STA TextBuffer+$68,Y
+    INY
+    CPY #$08
+    BNE mes1
+    INT m_UpdateLCD
+    LDA #$01
+    STA GraphType
+    LDA #$5A
+    STA Graph_x1
+    LDA #$18
+    STA Graph_y1
+    LDA #$96
+    STA Graph_x2
+    LDA #$2B
+    STA Graph_y2
+    INT m_BoxB
+    LDA #$5B
+    STA Graph_x1
+    LDA #$2C
+    STA Graph_y1
+    LDA #$98
+    STA Graph_x2
+    LDA #$2D
+    STA Graph_y2
+    INT m_BoxB
+    LDA #$97
+    STA Graph_x1
+    LDA #$19
+    STA Graph_y1
+    LDA #$98
+    STA Graph_x2
+    LDA #$2D
+    STA Graph_y2
+    INT m_BoxB
+    INT m_Inkey
+    RTS
+
+;打开多层目录
+;文件夹路径写在1800,格式为
+;1800第一层（/）
+;1810第二层（没有/）
+;...
+;0B05层数，最多5层
+
+opendir:
+    LDA #$00
+    STA $82
+od6:
+    LDA $82
+    ASL
+    ASL
+    ASL
+    ASL
+    STA $80
+    LDA #$18
+    STA $81
+    LDY #$00
+od2:
+    LDA ($80),Y
+    STA FileName,Y
+    BEQ od1
+    INY
+    CPY #$0E
+    BNE od2
+    LDA #$00
+    STA FileName,Y
+od1:
+    LDA FileName
+    CMP #$2F
+    BNE od3
+    INT m_TestDir
+od3:
+    INT m_EnterDir
+    BCS od4
+    LDA $82
+    CMP $0B05
+    BNE od5
+    CLC
+    RTS
+od4:
+    DEC $82
+    LDA $82
+    STA $0B05
+    SEC
+    RTS
+od5:
+    INC $82
+    SEC
+    BCS od6
+helpword:
+    .DB "*********热线帮助*********=========文件列表=========用方向键开或换页键切换要选择的文件，用【输入】键来确认选择。    【H】:目录顶 【E】:目录底 "
+    .DB $00
+;writenand代码
+;放在RAMADDR处运行
+inram:
+    .INCLUDE "inram.txt"
+inramend:
+    RTS

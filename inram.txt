@@ -1,0 +1,51 @@
+﻿    LDA #$01
+    STA $00
+    LDA #$00
+    STA $40
+    STA $42
+    STA $44
+    LDA #$40
+    STA $41
+    STA $45
+    LDA #$30
+    STA $43
+    LDY #$00
+send3:
+    LDA ($42),Y
+    STA ($40),Y
+    INC $42
+    BNE send1
+    INC $43
+send1:
+    INC $40
+    BNE send2
+    INC $41
+send2:
+    LDA $42
+    CMP $44
+    BNE send3
+    LDA $43
+    CMP $45
+    BNE send3
+    LDA ($42),Y
+    STA ($40),Y
+    LDA #$00
+    STA $40
+    LDA #$50
+    STA $41
+    LDY #$00
+    LDA #$FF
+;将5000-7FFF内容清为FF
+tian:
+    STA ($40),Y
+    INC $40
+    BNE tian1
+    INC $41
+tian1:
+    LDX $40
+    CPX #$00
+    BNE tian
+    LDX $41
+    CPX #$80
+    BNE tian
+    .INCLUDE "NC3000WN.txt"

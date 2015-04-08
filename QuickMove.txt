@@ -1,0 +1,209 @@
+﻿    .ORG $4000
+    .DB $AE,$EE,$EA,$00,$20,$00,$20
+    JMP Main
+    .DB $DA,$02,$31,$02,$FF,$FF
+;NC3000的中断名及其参数地址
+;可以改为其它机型后,
+;再将writenand程序改为相应机型
+;即可适应其它机型
+    .INCLUDE "NC3000_def.txt"
+;图片数据
+    .INCLUDE "logo.txt"
+;writenand等程序运行的地址
+    RAMADDR=$18C0
+Main:
+    LDA #<RAMADDR
+    STA $40
+    LDA #>RAMADDR
+    STA $41
+    LDA #<sendtoly
+    STA $42
+    LDA #>sendtoly
+    STA $43
+    LDA #<stlyend
+    STA $44
+    LDA #>stlyend
+    STA $45
+    JSR SEND
+    JSR RAMADDR
+    LDA #$01
+    STA GraphType
+    LDA #$00
+    STA $C7
+    STA Graph_x1
+    STA Graph_y1
+    LDA #$A0
+    STA Graph_x2
+    LDA #$50
+    STA Graph_y2
+    LDA #$10
+    sta GraphAddr
+    LDA #$40
+    sta GraphAddr+1
+
+    INT m_FileGraphA
+    LDA #$1A
+    STA Graph_x1
+    LDA #$05
+    STA Graph_y1
+    LDA #$83
+    STA Graph_x2
+    LDA #$14
+    STA Graph_y2
+xuhuan:
+    LDA #$50
+    sta GraphAddr
+    LDA #$46
+    sta GraphAddr+1
+    INT m_FileGraphA
+    JSR delay
+    LDA #$30
+    sta GraphAddr
+    LDA #$47
+    sta GraphAddr+1
+    INT m_FileGraphA
+    JSR delay
+    LDA #$00
+    STA AutoPowerOffA
+    LDA $C7
+    BEQ xuhuan
+    CMP #$99
+    BEQ help
+    LDA #$00
+    STA $C7
+    JSR filelist
+    INT m_Inkey
+    RTS
+help:
+    INT m_ClearScreen
+    INT m_ClearText
+    LDA #$01
+    STA FontType1
+    LDA #$00
+    STA FontType2
+    LDA #$FF
+    STA FontType3
+    STA FontType4
+    LDA #<helptxt1
+    STA $40
+    DEC $40
+    LDA #>helptxt1
+    STA $41
+    JSR helpxs
+    INT m_Inkey
+    LDA #<helptxt2
+    STA $40
+    DEC $40
+    LDA #>helptxt2
+    STA $41
+    JSR helpxs
+    LDA #<helptxt3
+    STA $40
+    DEC $40
+    LDA #>helptxt3
+    STA $41
+    JSR helpxs
+    JMP Main
+helpxs:
+    LDY #$9C
+help1:
+    LDA ($40),Y
+    STA $TextBuffer-1,Y
+    DEY
+    BNE help1
+    INT m_UpdateLCD
+    LDA #$01
+    STA Graph_x1
+    LDA #$00
+    STA Graph_y1
+    LDA #$9F
+    STA Graph_x2
+    LDA #$4F
+    STA Graph_y2
+    INT m_BoxB
+    INT m_Inkey
+    RTS
+helptxt1:
+    .db "………… 功能按键 …………上下，翻页：浏览，选定    输入:进入文件夹 S:保存修改左,右:改变顺序 (按S后生效)X: 瞬移剪切    V: 瞬移粘贴E:跳到目录底  H:跳到目录顶 "
+    .DB $00,$00,$00,$00
+helptxt2:
+    .DB "………… 程序说明 …………本软件采用修改目录所在的Nand块来达到文件瞬移的，可对根目录操作，可瞬移文件夹。为了防止对sysdir目录操作造成不良影响，特加以限制。 "
+    .DB $00,$00,$00,$00
+
+helptxt3:
+    .DB "………… 特此声明 …………请在仔细阅读帮助后再使用本软件，使用前请保证电力充足。若因使用本软件造成任何不良后果，本人概不负责。本人E-mail:gongweiyue@163.com"
+    .DB $00,$00,$00,$00
+;延时
+delay:
+    LDA #$00
+    TAX
+    TAY
+    LDA #$FA
+    STA $80
+delay1:
+    INY
+    BNE delay1
+    INX
+    BNE delay1
+    INC $80
+    BNE delay1
+    RTS
+   .INCLUDE "move.txt"
+;$40放目标地址，$42放源起始地址，$44放源终止地址。
+SEND:
+    LDY #$00
+SEND3:
+    LDA ($42),Y
+    STA ($40),Y
+    INC $42
+    BNE SEND1
+    INC $43
+SEND1:
+    INC $40
+    BNE SEND2
+    INC $41
+SEND2:
+    LDA $42
+    CMP $44
+    BNE SEND3
+    LDA $43
+    CMP $45
+    BNE SEND3
+    LDA ($42),Y
+    STA ($40),Y
+    RTS
+;将文件发送到00页4000
+;因为writenand写入的是01页4000
+sendtoly:
+    LDY #$00
+    LDA #$10
+    STA $40
+    LDA #$40
+    STA $41
+    LDA #$00
+    STA $42
+    LDA #$60
+    STA $43
+stly:
+    LDA #$01
+    STA $00
+    LDA ($40),Y
+    LDX #$00
+    STX $00
+    STA ($40),Y
+    INC $40
+    BNE stly1
+    INC $41
+stly1:
+    LDA $40
+    CMP $42
+    BNE stly
+    LDA $41
+    CMP $43
+    BNE stly
+    LDA #$00
+    STA $00
+    RTS
+stlyend:
+    RTS
+

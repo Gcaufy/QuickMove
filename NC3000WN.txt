@@ -1,0 +1,79 @@
+﻿;将01页4000-7fff的内容写入块号为09ca,09cb的NandFlash,不可写系统块,即0C70及其前
+writenand:
+    LDA $50
+    STA $09CA
+    LDA $51
+    STA $09CB
+
+    ASL $09CA
+    ROL $09CB
+    CLC
+    LDA $09CA
+    ADC #$00
+    STA $09CA
+    LDA $09CB
+    ADC #$90
+    STA $09CB
+
+    LDA #$1E
+    STA $09C9
+
+    LDA #$CF
+    STA $DE
+    LDA #$09
+    STA $DF
+
+    LDA #$02
+    STA $09CD
+    LDA #$00	;
+    STA $09CE	;
+    JSR $e078	;将($09ca)所指向的区块（逻辑）nand所占的物理块号读出到$09cf
+
+
+    LDA $00
+    PHA
+    LDA $0A
+    PHA
+    LDA #$11
+    STA $0A
+    LDA #$05
+    STA $00
+    JSR $196F
+;即JSR WNL1
+;此地址是计算出来的,为了配合WQX端编译器
+    PLA
+    STA $0A
+    PLA
+    STA $00
+    LDA #$00
+    STA $00
+    RTS
+WNL1:
+    JSR $48AE
+;上改为JSR $48AE可写系统块
+    BCC WNL2
+    RTS
+WNL2:
+    LDA #$00
+    STA $72
+    LDA #$40
+    STA $70
+WNL3:
+    LDA $70
+    STA $EB
+    LDA #$00
+    STA $EA
+    LDA $72
+    STA $09D1
+    JSR $45E3
+;上改为JSR $45E3可写系统块
+    CLC
+    INC $70
+    INC $70
+    INC $72
+    LDA $72
+    CMP #$20
+    BNE WNL3
+    RTS
+
+
